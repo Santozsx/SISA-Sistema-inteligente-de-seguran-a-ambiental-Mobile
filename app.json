@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "SISA",
+    "slug": "sentinela-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0F19",
+    "ios": {
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "SUA_CHAVE_AQUI"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F19"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "SUA_CHAVE_AQUI"
+        }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Permitir que o SISA acesse sua localização para registrar chamados."
+        }
+      ],
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0B0F19"
+        }
+      ],
+      "expo-font",
+      "expo-secure-store"
+    ]
+  }
+}
