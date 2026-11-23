@@ -2,12 +2,17 @@
 import { Platform } from 'react-native';
 import { API_URL } from './config';
 import { lerItem, salvarItem } from './armazenamento';
+import { bytesParaBase64 } from '../utils/previaCifrada';
 import {
   Anexo,
   AtualizarPerfil,
+  CaixaCofre,
   Chamado,
+  ConteudoCofre,
   Conversa,
+  DesbloqueioCofre,
   Instituto,
+  ItemCofre,
   Mensagem,
   Noticia,
   NovoChamado,
@@ -77,8 +82,11 @@ async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): Promise
   let resposta: Response;
   try {
     resposta = await fetch(`${API_URL}${caminho}`, { ...opcoes, headers: cabecalhos });
-  } catch {
-    throw new ErroApi(0, `Não foi possível conectar ao servidor (${API_URL}). O back end está rodando?`);
+  } catch (e) {
+    // Mostra também o erro original do aparelho (ajuda a diferenciar rede, permissão e arquivo).
+    const detalhe = e instanceof Error ? e.message : String(e);
+    console.warn(`[API] ${opcoes.method ?? 'GET'} ${caminho} falhou:`, e);
+    throw new ErroApi(0, `Não foi possível conectar ao servidor (${API_URL}). Detalhe: ${detalhe}`);
   }
 
   if (resposta.status === 401 && tokenAtual) {
@@ -94,6 +102,42 @@ async function requisitar<T>(caminho: string, opcoes: RequestInit = {}): Promise
 }
 
 const json = (dados: unknown) => JSON.stringify(dados);
+
+// Envio de arquivos (multipart). Usa XMLHttpRequest em vez de fetch porque, a partir do
+// SDK 58, o fetch do Expo não aceita mais o formato { uri, name, type } no FormData
+// ("Unsupported FormDataPart implementation"). O XMLHttpRequest do React Native aceita
+// e lê o arquivo direto do aparelho.
+const TEMPO_MAXIMO_ENVIO_MS = 120_000;
+
+function requisitarMultipart<T>(caminho: string, formulario: FormData): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_URL}${caminho}`);
+    if (tokenAtual) xhr.setRequestHeader('Authorization', `Bearer ${tokenAtual}`);
+    // Não definimos Content-Type: o XMLHttpRequest monta o "multipart/form-data; boundary=..." sozinho.
+    xhr.timeout = TEMPO_MAXIMO_ENVIO_MS;
+
+    xhr.onload = async () => {
+      if (xhr.status === 401 && tokenAtual) {
+        await salvarToken(null);
+        aoExpirarSessao?.();
+      }
+      let corpo: unknown = null;
+      try {
+        corpo = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        corpo = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(corpo as T);
+      else reject(new ErroApi(xhr.status, mensagemDeErro(corpo, xhr.status)));
+    };
+    xhr.onerror = () =>
+      reject(new ErroApi(0, `Não foi possível enviar o arquivo para o servidor (${API_URL}). Verifique a conexão.`));
+    xhr.ontimeout = () => reject(new ErroApi(0, 'O envio demorou demais. Tente uma foto menor ou verifique a conexão.'));
+
+    xhr.send(formulario);
+  });
+}
 
 // ------------------------------------------------------------- autenticação
 
@@ -152,9 +196,10 @@ export const criarChamado = (dados: NovoChamado) =>
 export const atualizarStatusChamado = (id: number, status: StatusChamado) =>
   requisitar<Chamado>(`/chamados/${id}/status`, { method: 'PATCH', body: json({ status }) });
 
-// Foto da galeria ou da câmera (uri local do expo-image-picker).
-export async function enviarAnexo(chamadoId: number, arquivo: { uri: string; nome: string; tipo: string }) {
-  const formulario = new FormData();
+export type FotoLocal = { uri: string; nome: string; tipo: string };
+
+// Coloca a foto (uri local do expo-image-picker) no campo "arquivo" de um FormData.
+async function anexarFoto(formulario: FormData, arquivo: FotoLocal) {
   if (Platform.OS === 'web') {
     const blob = await (await fetch(arquivo.uri)).blob();
     formulario.append('arquivo', blob, arquivo.nome);
@@ -162,7 +207,13 @@ export async function enviarAnexo(chamadoId: number, arquivo: { uri: string; nom
     // No React Native o FormData aceita { uri, name, type } e lê o arquivo do aparelho.
     formulario.append('arquivo', { uri: arquivo.uri, name: arquivo.nome, type: arquivo.tipo } as unknown as Blob);
   }
-  return requisitar<Anexo>(`/chamados/${chamadoId}/anexos`, { method: 'POST', body: formulario });
+}
+
+// Foto da galeria ou da câmera.
+export async function enviarAnexo(chamadoId: number, arquivo: FotoLocal) {
+  const formulario = new FormData();
+  await anexarFoto(formulario, arquivo);
+  return requisitarMultipart<Anexo>(`/chamados/${chamadoId}/anexos`, formulario);
 }
 
 // A url do anexo vem como "/api/v1/chamados/1/anexos/2"; a imagem precisa do token no cabeçalho.
@@ -184,6 +235,56 @@ export const listarMensagens = (institutoId: number, mostrarCifrado = false) =>
 
 export const enviarMensagem = (institutoId: number, texto: string) =>
   requisitar<Mensagem>(`/mensagens/${institutoId}`, { method: 'POST', body: json({ texto }) });
+
+// -------------------------------------------------------------------- cofre
+// Mesmo funcionamento do site: a foto e a legenda são cifradas no servidor; para ver,
+// confirma-se a senha e o token curto devolvido vai no cabeçalho X-Token-Cofre.
+
+export const listarCofre = (caixa: CaixaCofre = 'todos') => requisitar<ItemCofre[]>(`/cofre?caixa=${caixa}`);
+
+// destinatarioId null = "só para mim".
+export async function enviarAoCofre(foto: FotoLocal, destinatarioId: number | null, legenda: string) {
+  const formulario = new FormData();
+  await anexarFoto(formulario, foto);
+  if (destinatarioId !== null) formulario.append('destinatario_id', String(destinatarioId));
+  if (legenda.trim()) formulario.append('legenda', legenda.trim());
+  return requisitarMultipart<ItemCofre>('/cofre', formulario);
+}
+
+// Confere a senha. O token devolvido fica só na memória da tela (nunca no armazenamento).
+export const desbloquearCofre = (senha: string) =>
+  requisitar<DesbloqueioCofre>('/cofre/desbloquear', { method: 'POST', body: json({ senha }) });
+
+export const revelarDoCofre = (id: number, tokenCofre: string) =>
+  requisitar<ConteudoCofre>(`/cofre/${id}/conteudo`, {
+    headers: { 'X-Token-Cofre': tokenCofre },
+    cache: 'no-store',
+  });
+
+export const excluirDoCofre = (id: number) => requisitar<void>(`/cofre/${id}`, { method: 'DELETE' });
+
+// Começo do arquivo como está guardado no disco (para desenhar a prévia "ruído").
+export async function bytesCifradosBase64(id: number, limite: number): Promise<string> {
+  const resposta = await fetch(`${API_URL}/cofre/${id}/cifrado?limite_bytes=${limite}`, {
+    headers: { Authorization: `Bearer ${tokenAtual ?? ''}` },
+    cache: 'no-store',
+  });
+  if (!resposta.ok) throw new ErroApi(resposta.status, 'Não foi possível ler o arquivo cifrado.');
+  // O fetch do Expo (SDK 58+) entrega os bytes direto com arrayBuffer().
+  try {
+    return bytesParaBase64(new Uint8Array(await resposta.clone().arrayBuffer()));
+  } catch {
+    // Motores antigos: lê como data URL pelo FileReader.
+  }
+  const blob = await resposta.blob();
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result));
+    leitor.onerror = () => reject(new Error('Falha ao ler os bytes cifrados.'));
+    leitor.readAsDataURL(blob);
+  });
+  return dataUrl.slice(dataUrl.indexOf(',') + 1);
+}
 
 // ------------------------------------------------------------------ sistema
 

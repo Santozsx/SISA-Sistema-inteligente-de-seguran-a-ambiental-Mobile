@@ -5,6 +5,7 @@ import MuralScreen from '../screens/MuralScreen';
 import InstitutosScreen from '../screens/InstitutosScreen';
 import MensagensStack from './MensagensStack';
 import ChamadosStack from './ChamadosStack';
+import CofreScreen from '../screens/CofreScreen';
 import ConfigScreen from '../screens/ConfigScreen';
 import { colors } from '../theme/colors';
 
@@ -15,6 +16,7 @@ const icons: Record<string, keyof typeof Feather.glyphMap> = {
   Institutos: 'map-pin',
   Mensagens: 'message-circle',
   Chamados: 'alert-triangle',
+  Cofre: 'lock',
   Config: 'settings',
 };
 
@@ -33,7 +35,7 @@ export default function BottomTabs() {
           paddingBottom: 8,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 11 },
+        tabBarLabelStyle: { fontSize: 10 },
         tabBarIcon: ({ color, size }) => (
           <Feather name={icons[route.name]} size={size ? size - 4 : 18} color={color} />
         ),
@@ -43,6 +45,7 @@ export default function BottomTabs() {
       <Tab.Screen name="Institutos" component={InstitutosScreen} />
       <Tab.Screen name="Mensagens" component={MensagensStack} />
       <Tab.Screen name="Chamados" component={ChamadosStack} />
+      <Tab.Screen name="Cofre" component={CofreScreen} />
       <Tab.Screen name="Config" component={ConfigScreen} />
     </Tab.Navigator>
   );

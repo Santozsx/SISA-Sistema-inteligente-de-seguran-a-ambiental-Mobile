@@ -91,6 +91,14 @@ export default function ChatScreen({ route, navigation }: any) {
             </Text>
           )}
         </View>
+        {/* Foto cifrada para este instituto: abre o Cofre já com ele como destinatário */}
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Cofre', { destinoId: institutoId })}
+          hitSlop={10}
+          accessibilityLabel="Enviar foto cifrada pelo Cofre"
+        >
+          <Feather name="image" size={18} color={colors.accent} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.canalSeguro, mostrarCifrado && styles.canalSeguroAtivo]}
           onPress={() => setMostrarCifrado((v) => !v)}

@@ -29,6 +29,7 @@ src/
     NoticiaCard.tsx
     ChamadoCard.tsx
     MessageBubble.tsx
+    PreviaCifrada.tsx            # bytes cifrados desenhados como imagem (BMP gerado em memória)
   screens/
     LoginScreen.tsx
     RegisterScreen.tsx
@@ -38,12 +39,22 @@ src/
     ChatScreen.tsx                # Chat individual (canal cifrado)
     ChamadosScreen.tsx           # Aba 4 — listagem com filtros por status
     NovoChamadoScreen.tsx        # Modal de novo chamado (categoria, GPS, anexo)
-    ConfigScreen.tsx             # Aba 5 — perfil, criptografia, notificações
+    CofreScreen.tsx              # Aba 5 — fotos cifradas (enviar, ver cifrado, revelar com senha)
+    ConfigScreen.tsx             # Aba 6 — perfil, criptografia, notificações
   navigation/
     BottomTabs.tsx                # Bottom Tab Navigation (5 abas)
     MensagensStack.tsx            # Stack: lista de conversas → chat
     ChamadosStack.tsx             # Stack: lista de chamados → modal novo chamado
 ```
+
+## Cofre (igual ao site)
+
+Usa as mesmas rotas `/cofre` do back end. A foto (câmera ou galeria) e a legenda são cifradas
+no servidor. A lista mostra a prévia "ruído" dos bytes cifrados, a amostra em hexadecimal,
+o algoritmo, os tamanhos, a entropia e o SHA-256. "Revelar" pede a senha (`POST /cofre/desbloquear`),
+mostra a foto por 1 minuto, e o cofre se fecha sozinho ao vencer o prazo, ao trocar de aba
+ou quando o app vai para segundo plano. No chat, o ícone de imagem abre o Cofre já com o
+instituto da conversa como destinatário.
 
 ## Próximos passos sugeridos
 

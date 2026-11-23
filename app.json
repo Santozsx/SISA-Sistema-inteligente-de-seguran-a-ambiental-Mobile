@@ -23,7 +23,8 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
       ]
     },
     "plugins": [
@@ -31,6 +32,13 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Permitir que o SISA acesse sua localização para registrar chamados."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir que o SISA acesse suas fotos para anexar evidências e enviar fotos cifradas.",
+          "cameraPermission": "Permitir que o SISA use a câmera para fotografar evidências e enviar fotos cifradas."
         }
       ],
       "expo-status-bar",

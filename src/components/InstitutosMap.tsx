@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { colors } from '../theme/colors';
 import { Instituto } from '../types';
@@ -34,7 +34,9 @@ export default function InstitutosMap({ institutos, posicao }: { institutos: Ins
   return (
     <MapView
       style={StyleSheet.absoluteFill}
-      provider={PROVIDER_GOOGLE}
+      // Google Maps só no Android. No iPhone o Expo Go não traz o Google Maps e o app
+      // quebraria ao abrir esta tela; lá usamos o Apple Maps (provider padrão).
+      provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
       initialRegion={{ latitude: centro.latitude, longitude: centro.longitude, latitudeDelta: zoom, longitudeDelta: zoom }}
       customMapStyle={darkMapStyle}
       showsUserLocation={!!posicao}

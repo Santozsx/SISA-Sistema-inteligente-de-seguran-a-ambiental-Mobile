@@ -131,3 +131,39 @@ export interface Versao {
   versao_api: string;
   versao_minima_app: string;
 }
+
+// ------------------------------------------------------------------- cofre
+// Fotos guardadas cifradas no servidor (mesmas rotas /cofre usadas pelo site).
+
+export type CaixaCofre = 'todos' | 'recebidos' | 'enviados';
+
+export interface ItemCofre {
+  id: number;
+  remetente: InstitutoResumo;
+  destinatario: InstitutoResumo;
+  enviado_por_mim: boolean;
+  tipo_mime: string;
+  algoritmo: string;
+  algoritmo_nome: string;
+  tamanho_bytes: number;
+  tamanho_cifrado: number;
+  entropia_original: number;
+  entropia_cifrado: number;
+  hash_sha256: string;
+  amostra_hex: string; // primeiros bytes do arquivo como está no disco
+  visualizado: boolean;
+  criado_em: string;
+}
+
+export interface ConteudoCofre {
+  id: number;
+  nome_arquivo: string;
+  legenda: string | null;
+  tipo_mime: string;
+  imagem_base64: string;
+}
+
+export interface DesbloqueioCofre {
+  token_cofre: string;
+  expira_em_segundos: number;
+}

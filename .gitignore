@@ -1,0 +1,21 @@
+# Dependências (cada um roda "npm install" na sua máquina)
+node_modules/
+
+# Estado local do Expo (histórico de aparelhos e configurações do servidor de desenvolvimento)
+.expo/
+dist/
+web-build/
+
+# Segredos e configurações locais
+.env
+.env.local
+
+# Builds nativos gerados pelo "expo prebuild"
+android/
+ios/
+
+# Backups antigos e arquivos do sistema
+*.bak
+.DS_Store
+Thumbs.db
+npm-debug.log*
