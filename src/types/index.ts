@@ -88,6 +88,7 @@ export interface Noticia {
   titulo: string;
   resumo: string;
   fonte: string;
+  imagens: Anexo[]; // fotos anexadas ao chamado
   criado_em: string;
 }
 

@@ -21,7 +21,17 @@ import { Opcao } from '../types';
 import { extrairCoordenadas } from '../utils/formatar';
 import { obterPosicao, Posicao } from '../utils/localizacao';
 
-type Foto = { uri: string; nome: string; tipo: string };
+type Foto = { id: string; uri: string; nome: string; tipo: string; tamanho: number | null };
+
+// Precisam bater com TIPOS_ANEXO_PERMITIDOS e TAMANHO_MAXIMO_ANEXO_MB do back end (e com o site).
+const TIPOS_IMAGEM = ['image/jpeg', 'image/png', 'image/webp'];
+const TAMANHO_MAXIMO_MB = 5;
+const MAXIMO_FOTOS = 5;
+
+function formatarTamanho(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function NovoChamadoScreen({ navigation }: any) {
   const [categorias, setCategorias] = useState<Opcao[]>([]);
@@ -31,7 +41,9 @@ export default function NovoChamadoScreen({ navigation }: any) {
   const [gps, setGps] = useState<Posicao | null>(null);
   const [valor, setValor] = useState('');
   const [unidade, setUnidade] = useState('');
-  const [foto, setFoto] = useState<Foto | null>(null);
+  const [fotos, setFotos] = useState<Foto[]>([]);
+  const [avisoFotos, setAvisoFotos] = useState<string | null>(null);
+  const [progresso, setProgresso] = useState<string | null>(null);
   const [buscandoLocal, setBuscandoLocal] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -60,16 +72,47 @@ export default function NovoChamadoScreen({ navigation }: any) {
     }
   }
 
-  function guardarFoto(resultado: ImagePicker.ImagePickerResult) {
+  function guardarFotos(resultado: ImagePicker.ImagePickerResult) {
     if (resultado.canceled) return;
-    const asset = resultado.assets[0];
-    const tipo = asset.mimeType ?? 'image/jpeg';
-    const extensao = tipo.split('/')[1] ?? 'jpg';
-    setFoto({ uri: asset.uri, nome: asset.fileName ?? `evidencia-${Date.now()}.${extensao}`, tipo });
+    const recusadas: string[] = [];
+    const novas: Foto[] = [];
+    let vagas = MAXIMO_FOTOS - fotos.length;
+
+    resultado.assets.forEach((asset, i) => {
+      const tipo = asset.mimeType ?? 'image/jpeg';
+      const extensao = tipo.split('/')[1] ?? 'jpg';
+      const nome = asset.fileName ?? `evidencia-${Date.now()}-${i + 1}.${extensao}`;
+      const tamanho = asset.fileSize ?? null;
+
+      if (!TIPOS_IMAGEM.includes(tipo)) recusadas.push(`${nome} (use JPG, PNG ou WEBP)`);
+      else if (tamanho !== null && tamanho > TAMANHO_MAXIMO_MB * 1024 * 1024)
+        recusadas.push(`${nome} (maior que ${TAMANHO_MAXIMO_MB} MB)`);
+      else if (vagas <= 0) recusadas.push(`${nome} (limite de ${MAXIMO_FOTOS} fotos)`);
+      else {
+        novas.push({ id: `${Date.now()}-${i}-${asset.uri}`, uri: asset.uri, nome, tipo, tamanho });
+        vagas--;
+      }
+    });
+
+    setFotos((atuais) => [...atuais, ...novas]);
+    setAvisoFotos(recusadas.length ? `Não adicionadas: ${recusadas.join('; ')}.` : null);
+  }
+
+  function removerFoto(id: string) {
+    setFotos((atuais) => atuais.filter((f) => f.id !== id));
+    setAvisoFotos(null);
   }
 
   async function escolherDaGaleria() {
-    guardarFoto(await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 }));
+    guardarFotos(
+      await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.6,
+        allowsMultipleSelection: true,
+        selectionLimit: MAXIMO_FOTOS - fotos.length,
+        orderedSelection: true,
+      }),
+    );
   }
 
   async function tirarFoto() {
@@ -78,7 +121,7 @@ export default function NovoChamadoScreen({ navigation }: any) {
       Alert.alert('Permissão necessária', 'Habilite a câmera para fotografar a evidência.');
       return;
     }
-    guardarFoto(await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6 }));
+    guardarFotos(await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6 }));
   }
 
   async function cifrarEEnviar() {
@@ -92,6 +135,7 @@ export default function NovoChamadoScreen({ navigation }: any) {
     setErro(null);
     setEnviando(true);
     try {
+      setProgresso('Cifrando e enviando chamado...');
       const chamado = await criarChamado({
         categoria,
         descricao: descricao.trim(),
@@ -102,20 +146,26 @@ export default function NovoChamadoScreen({ navigation }: any) {
         unidade: unidade.trim() || null,
       });
 
-      let avisoAnexo = '';
-      if (foto) {
+      // Fotos vão uma por vez, depois que o chamado já existe (o id entra na chave da cifra).
+      const falhas: string[] = [];
+      for (const [i, foto] of fotos.entries()) {
+        setProgresso(`Cifrando foto ${i + 1} de ${fotos.length}...`);
         try {
           await enviarAnexo(chamado.id, foto);
         } catch (e) {
-          avisoAnexo = `\n\nO chamado foi criado, mas a foto não foi enviada: ${e instanceof Error ? e.message : 'erro desconhecido'}`;
+          falhas.push(`${foto.nome}: ${e instanceof Error ? e.message : 'erro desconhecido'}`);
         }
       }
+      const avisoAnexo = falhas.length
+        ? `\n\nO chamado foi criado, mas ${falhas.length} foto(s) não foram enviadas:\n${falhas.join('\n')}`
+        : '';
 
       Alert.alert('Chamado enviado', `O chamado #${chamado.id} foi cifrado e registrado.${avisoAnexo}`);
       navigation.replace('ChamadoDetalhe', { chamadoId: chamado.id });
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível enviar o chamado.');
       setEnviando(false);
+      setProgresso(null);
     }
   }
 
@@ -203,36 +253,51 @@ export default function NovoChamadoScreen({ navigation }: any) {
             />
           </View>
 
-          <Text style={styles.label}>Evidência (foto)</Text>
-          {foto ? (
-            <View style={styles.fotoBox}>
-              <Image source={{ uri: foto.uri }} style={styles.foto} resizeMode="cover" />
-              <View style={styles.fotoRodape}>
-                <Text style={styles.anexoText} numberOfLines={1}>{foto.nome}</Text>
-                <TouchableOpacity onPress={() => setFoto(null)} hitSlop={8}>
-                  <Feather name="trash-2" size={16} color={colors.danger} />
-                </TouchableOpacity>
-              </View>
+          <Text style={styles.label}>
+            Evidências (fotos) · {fotos.length}/{MAXIMO_FOTOS}
+          </Text>
+          {fotos.length > 0 && (
+            <View style={styles.fotosGrade}>
+              {fotos.map((f) => (
+                <View key={f.id} style={styles.fotoItem}>
+                  <Image source={{ uri: f.uri }} style={styles.fotoMiniatura} resizeMode="cover" />
+                  {f.tamanho !== null && (
+                    <Text style={styles.fotoTamanho}>{formatarTamanho(f.tamanho)}</Text>
+                  )}
+                  <TouchableOpacity
+                    style={styles.fotoRemover}
+                    onPress={() => removerFoto(f.id)}
+                    disabled={enviando}
+                    hitSlop={8}
+                    accessibilityLabel={`Remover ${f.nome}`}
+                  >
+                    <Feather name="x" size={14} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
-          ) : (
-            <View style={styles.localRow}>
+          )}
+          {fotos.length < MAXIMO_FOTOS && (
+            <View style={[styles.localRow, fotos.length > 0 && { marginTop: spacing.sm }]}>
               {Platform.OS !== 'web' && (
-                <TouchableOpacity style={[styles.anexoBox, { flex: 1 }]} onPress={tirarFoto}>
+                <TouchableOpacity style={[styles.anexoBox, { flex: 1 }]} onPress={tirarFoto} disabled={enviando}>
                   <Feather name="camera" size={16} color={colors.textSecondary} />
                   <Text style={styles.anexoText}>Tirar foto</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={[styles.anexoBox, { flex: 1 }]} onPress={escolherDaGaleria}>
+              <TouchableOpacity style={[styles.anexoBox, { flex: 1 }]} onPress={escolherDaGaleria} disabled={enviando}>
                 <Feather name="image" size={16} color={colors.textSecondary} />
                 <Text style={styles.anexoText}>Galeria</Text>
               </TouchableOpacity>
             </View>
           )}
+          <Text style={styles.fotoDica}>JPG, PNG ou WEBP · até {TAMANHO_MAXIMO_MB} MB cada</Text>
+          {avisoFotos && <Text style={styles.fotoAviso}>{avisoFotos}</Text>}
 
           <View style={styles.alertBox}>
             <Feather name="lock" size={14} color={colors.success} />
             <Text style={styles.alertText}>
-              Descrição, local, valores e a foto são cifrados pelo servidor antes de serem guardados
+              Descrição, local, valores e as fotos são cifrados pelo servidor antes de serem guardados
             </Text>
           </View>
 
@@ -245,7 +310,10 @@ export default function NovoChamadoScreen({ navigation }: any) {
             activeOpacity={0.85}
           >
             {enviando ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <View style={styles.enviandoRow}>
+                <ActivityIndicator color="#FFFFFF" />
+                {progresso && <Text style={styles.buttonText}>{progresso}</Text>}
+              </View>
             ) : (
               <Text style={styles.buttonText}>Cifrar e enviar chamado</Text>
             )}
@@ -303,9 +371,42 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   anexoText: { color: colors.textSecondary, fontSize: 13, flexShrink: 1 },
-  fotoBox: { backgroundColor: colors.card, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
-  foto: { width: '100%', height: 180 },
-  fotoRodape: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, padding: spacing.sm },
+  fotosGrade: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  fotoItem: {
+    width: '31%',
+    aspectRatio: 1,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  fotoMiniatura: { width: '100%', height: '100%' },
+  fotoTamanho: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    fontSize: 10,
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  fotoRemover: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 11, 20, 0.8)',
+  },
+  fotoDica: { color: colors.textMuted, fontSize: 11, marginTop: spacing.sm },
+  fotoAviso: { color: colors.danger, fontSize: 12, marginTop: spacing.xs, lineHeight: 16 },
+  enviandoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   alertBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
